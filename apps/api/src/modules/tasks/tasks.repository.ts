@@ -18,11 +18,11 @@ export class TasksRepository {
     return this.prisma.task.create({ data });
   }
 
-  async update(id: string, _userId: string, data: Prisma.TaskUpdateInput): Promise<Task> {
-    return this.prisma.task.update({ where: { id }, data });
+  async update(id: string, userId: string, data: Prisma.TaskUpdateInput): Promise<Task> {
+    return this.prisma.task.update({ where: { id, userId }, data });
   }
 
-  async delete(id: string, _userId: string): Promise<Task> {
-    return this.prisma.task.delete({ where: { id } });
+  async delete(id: string, userId: string): Promise<Task> {
+    return this.prisma.task.delete({ where: { id, userId } });
   }
 }
