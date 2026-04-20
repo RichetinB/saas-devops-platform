@@ -2,7 +2,7 @@
 Library    RequestsLibrary
 Library    Collections
 Library    String
-Suite Setup    Run Keywords    Check API Health    AND    Generate Unique Email
+Suite Setup    Run Keywords    Check API Health    AND    Generate Unique Email    AND    Create Session    api    ${BASE_URL}    verify=False
 
 *** Variables ***
 ${BASE_URL}    http://localhost:3001
@@ -28,11 +28,9 @@ Generate Unique Email
 *** Test Cases ***
 User Can Register
     [Documentation]    Test user registration with valid email and password
-    Create Session    api    ${BASE_URL}    verify=False
     ${payload}=    Create Dictionary    email=${TEST_EMAIL}    password=${TEST_PASSWORD}
     ${response}=    POST On Session    api    /auth/register
     ...    json=${payload}
-    ...    headers={"Content-Type": "application/json"}
     ...    expected_status=any
 
     Log    Response Status: ${response.status_code}
@@ -43,11 +41,9 @@ User Can Register
 
 User Can Login
     [Documentation]    Test user login with registered credentials
-    Create Session    api    ${BASE_URL}    verify=False
     ${payload}=    Create Dictionary    email=${TEST_EMAIL}    password=${TEST_PASSWORD}
     ${response}=    POST On Session    api    /auth/login
     ...    json=${payload}
-    ...    headers={"Content-Type": "application/json"}
     ...    expected_status=any
 
     Log    Response Status: ${response.status_code}
@@ -58,13 +54,22 @@ User Can Login
 
 User Cannot Login With Wrong Password
     [Documentation]    Test login fails with invalid credentials
-    Create Session    api    ${BASE_URL}    verify=False
     ${payload}=    Create Dictionary    email=${TEST_EMAIL}    password=WrongPassword999
     ${response}=    POST On Session    api    /auth/login
     ...    json=${payload}
-    ...    headers={"Content-Type": "application/json"}
     ...    expected_status=any
 
     Log    Response Status: ${response.status_code}
     Log    Response Body: ${response.text}
     Should Be Equal As Integers    ${response.status_code}    401
+
+User Cannot Register With Duplicate Email
+    [Documentation]    Test registration fails when email is already taken
+    ${payload}=    Create Dictionary    email=${TEST_EMAIL}    password=${TEST_PASSWORD}
+    ${response}=    POST On Session    api    /auth/register
+    ...    json=${payload}
+    ...    expected_status=any
+
+    Log    Response Status: ${response.status_code}
+    Log    Response Body: ${response.text}
+    Should Be Equal As Integers    ${response.status_code}    409
