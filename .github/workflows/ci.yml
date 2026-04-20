@@ -44,7 +44,6 @@ jobs:
 
       - name: Lint API
         run: npm run lint --workspace=apps/api
-        continue-on-error: true
 
       - name: Generate Prisma client
         run: npx prisma generate
@@ -81,16 +80,3 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_db?schema=public
           NEXT_PUBLIC_API_URL: http://localhost:3001
-
-  docker:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    needs: build
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Docker images
-        run: docker compose -f infra/docker-compose.yml build

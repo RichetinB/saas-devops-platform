@@ -1,0 +1,43 @@
+name: CD – Staging
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [develop]
+    types: [completed]
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    if: github.event.workflow_run.conclusion == 'success'
+
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+
+    steps:
+      - name: Deploy to staging server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd /opt/saas-devops-platform
+            git fetch origin develop && git reset --hard origin/develop
+            docker compose -f infra/docker-compose.yml build
+            docker compose -f infra/docker-compose.yml up -d --remove-orphans
+
+      - name: Health check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            echo "Running post-deploy health checks..."
+            curl --silent --fail --retry 5 --retry-delay 5 ${{ vars.STAGING_URL }}/health || exit 1
+            echo "Health check passed."

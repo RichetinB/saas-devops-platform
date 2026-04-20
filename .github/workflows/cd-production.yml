@@ -1,73 +1,18 @@
-name: CD – Main (Production)
+name: CD – Production
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
     branches: [main]
+    types: [completed]
 
 jobs:
-  ci:
-    name: CI
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: saas_test_db
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build shared package
-        run: npm run build --workspace=packages/shared
-
-      - name: Lint API
-        run: npm run lint --workspace=apps/api
-
-      - name: Generate Prisma client
-        run: npx prisma generate
-        working-directory: apps/api
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_test_db?schema=public
-
-      - name: Run API unit tests
-        run: npm test --workspace=apps/api
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_test_db?schema=public
-          JWT_SECRET: test-secret
-
-      - name: Build all packages
-        run: npm run build
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_test_db?schema=public
-          NEXT_PUBLIC_API_URL: http://localhost:3001
-
-  deploy:
+  deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    needs: ci
+    if: github.event.workflow_run.conclusion == 'success'
 
     environment:
       name: production
@@ -87,10 +32,16 @@ jobs:
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
       - name: Push Docker images to registry
+        env:
+          IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
         run: |
+          docker tag saas-devops-platform-api ${{ vars.REGISTRY_URL }}/saas-api:${IMAGE_TAG}
           docker tag saas-devops-platform-api ${{ vars.REGISTRY_URL }}/saas-api:latest
+          docker tag saas-devops-platform-web ${{ vars.REGISTRY_URL }}/saas-web:${IMAGE_TAG}
           docker tag saas-devops-platform-web ${{ vars.REGISTRY_URL }}/saas-web:latest
+          docker push ${{ vars.REGISTRY_URL }}/saas-api:${IMAGE_TAG}
           docker push ${{ vars.REGISTRY_URL }}/saas-api:latest
+          docker push ${{ vars.REGISTRY_URL }}/saas-web:${IMAGE_TAG}
           docker push ${{ vars.REGISTRY_URL }}/saas-web:latest
 
       - name: Deploy to production server
@@ -99,10 +50,13 @@ jobs:
           host: ${{ secrets.PRODUCTION_SSH_HOST }}
           username: ${{ secrets.PRODUCTION_SSH_USER }}
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          envs: IMAGE_TAG
           script: |
             cd /opt/saas-devops-platform
-            docker compose -f infra/docker-compose.yml pull
-            docker compose -f infra/docker-compose.yml up -d --remove-orphans
+            IMAGE_TAG=${{ github.event.workflow_run.head_sha }}
+            docker pull ${{ vars.REGISTRY_URL }}/saas-api:${IMAGE_TAG}
+            docker pull ${{ vars.REGISTRY_URL }}/saas-web:${IMAGE_TAG}
+            IMAGE_TAG=${IMAGE_TAG} docker compose -f infra/docker-compose.yml up -d --remove-orphans
 
       - name: Health check
         uses: appleboy/ssh-action@v1.0.3
