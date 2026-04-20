@@ -1,15 +1,32 @@
 name: CD Production
 
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: ["E2E – Robot Framework Tests"]
+    types: [completed]
+  workflow_dispatch:
 
 jobs:
   build-and-push:
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main'
+        )
+      }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -21,18 +38,18 @@ jobs:
       - name: Build images
         run: |
           docker build -t ghcr.io/${{ github.repository }}/api:latest -f apps/api/Dockerfile .
-          docker build -t ghcr.io/${{ github.repository }}/api:${{ github.sha }} -f apps/api/Dockerfile .
+          docker build -t ghcr.io/${{ github.repository }}/api:${{ env.IMAGE_TAG }} -f apps/api/Dockerfile .
 
           docker build -t ghcr.io/${{ github.repository }}/web:latest -f apps/web/Dockerfile .
-          docker build -t ghcr.io/${{ github.repository }}/web:${{ github.sha }} -f apps/web/Dockerfile .
+          docker build -t ghcr.io/${{ github.repository }}/web:${{ env.IMAGE_TAG }} -f apps/web/Dockerfile .
 
       - name: Push images
         run: |
           docker push ghcr.io/${{ github.repository }}/api:latest
-          docker push ghcr.io/${{ github.repository }}/api:${{ github.sha }}
+          docker push ghcr.io/${{ github.repository }}/api:${{ env.IMAGE_TAG }}
 
           docker push ghcr.io/${{ github.repository }}/web:latest
-          docker push ghcr.io/${{ github.repository }}/web:${{ github.sha }}
+          docker push ghcr.io/${{ github.repository }}/web:${{ env.IMAGE_TAG }}
 
       # 👇 futur (quand tu auras ton VPS)
       # - name: Deploy via SSH
