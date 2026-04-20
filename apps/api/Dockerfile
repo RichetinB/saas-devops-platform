@@ -1,5 +1,29 @@
+# Development stage
+FROM node:20-alpine AS development
+
+RUN apk add --no-cache openssl
+
+WORKDIR /app
+
+# Copy workspace manifests so npm can install the monorepo dependencies.
+COPY package*.json ./
+COPY apps/api/package*.json ./apps/api/
+COPY packages/shared/package*.json ./packages/shared/
+
+RUN npm ci
+
+COPY packages/shared ./packages/shared
+COPY apps/api ./apps/api
+
+# Generate Prisma client for type-safe imports during watch mode.
+RUN cd apps/api && npx prisma generate
+
+CMD ["npm", "run", "dev", "--workspace=apps/api"]
+
 # Build stage
 FROM node:20-alpine AS builder
+
+RUN apk add --no-cache openssl
 
 WORKDIR /app
 
@@ -26,6 +50,8 @@ RUN npm run build --workspace=apps/api
 
 # Production stage
 FROM node:20-alpine AS production
+
+RUN apk add --no-cache openssl
 
 WORKDIR /app
 

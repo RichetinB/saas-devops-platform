@@ -10,6 +10,21 @@ COPY apps/web/package*.json ./apps/web/
 COPY packages/shared/package*.json ./packages/shared/
 RUN npm ci
 
+# Development stage
+FROM base AS development
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+COPY package*.json ./
+COPY apps/web/package*.json ./apps/web/
+COPY packages/shared/package*.json ./packages/shared/
+RUN npm ci
+
+COPY packages/shared ./packages/shared
+COPY apps/web ./apps/web
+
+CMD ["npm", "run", "dev", "--workspace=apps/web"]
+
 # Build stage
 FROM base AS builder
 WORKDIR /app

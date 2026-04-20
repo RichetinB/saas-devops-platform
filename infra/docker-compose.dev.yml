@@ -5,12 +5,34 @@ version: '3.9'
 
 services:
   postgres:
+    image: postgres:16-alpine
+    container_name: saas_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: saas_db
     ports:
       - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
-    ports:
-      - '6379:6379'
+    image: redis:7-alpine
+    container_name: saas_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   api:
     build:
@@ -18,7 +40,7 @@ services:
       dockerfile: apps/api/Dockerfile
       target: development
     container_name: saas_api_dev
-    command: npm run dev --workspace=apps/api
+    command: sh -c "cd apps/api; npx prisma migrate deploy; cd /app; npm run dev --workspace=apps/api"
     volumes:
       - ../apps/api/src:/app/apps/api/src
       - ../packages:/app/packages
@@ -28,6 +50,9 @@ services:
       PORT: 3001
       FRONTEND_URL: http://localhost:3000
       NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - '3001:3001'
       - '9229:9229'  # Node.js debugger
@@ -47,3 +72,7 @@ services:
       NODE_ENV: development
     ports:
       - '3000:3000'
+
+volumes:
+  postgres_data:
+  redis_data:
