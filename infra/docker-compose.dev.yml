@@ -1,0 +1,49 @@
+version: '3.9'
+
+# Development override – hot-reload for API and Web
+# Usage: docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up
+
+services:
+  postgres:
+    ports:
+      - '5432:5432'
+
+  redis:
+    ports:
+      - '6379:6379'
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: development
+    container_name: saas_api_dev
+    command: npm run dev --workspace=apps/api
+    volumes:
+      - ../apps/api/src:/app/apps/api/src
+      - ../packages:/app/packages
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/saas_db?schema=public
+      JWT_SECRET: dev-secret-change-me
+      PORT: 3001
+      FRONTEND_URL: http://localhost:3000
+      NODE_ENV: development
+    ports:
+      - '3001:3001'
+      - '9229:9229'  # Node.js debugger
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      target: development
+    container_name: saas_web_dev
+    command: npm run dev --workspace=apps/web
+    volumes:
+      - ../apps/web/src:/app/apps/web/src
+      - ../packages:/app/packages
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NODE_ENV: development
+    ports:
+      - '3000:3000'
