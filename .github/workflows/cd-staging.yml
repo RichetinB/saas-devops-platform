@@ -1,33 +1,19 @@
 name: CD Staging
 
 on:
-  workflow_run:
-    workflows: ["E2E – Robot Framework Tests"]
-    types: [completed]
-    branches: [develop]
   workflow_dispatch:
 
 jobs:
   build-and-push:
-    if: >-
-      ${{
-        github.event_name == 'workflow_dispatch' ||
-        (
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.head_branch == 'develop'
-        )
-      }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     env:
-      IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+      IMAGE_TAG: ${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Login to GHCR
         uses: docker/login-action@v3

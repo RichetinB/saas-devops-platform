@@ -93,3 +93,144 @@ jobs:
 
       - name: Build Docker images
         run: docker compose -f infra/docker-compose.yml build
+
+  e2e-robot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs: docker
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: saas_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build all workspaces
+        run: npm run build
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_db?schema=public
+          NEXT_PUBLIC_API_URL: http://localhost:3001
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_db?schema=public
+
+      - name: Run Prisma migrations
+        run: npx prisma migrate deploy
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_db?schema=public
+
+      - name: Start API server
+        run: |
+          cd apps/api
+          node dist/main &
+          sleep 5
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_db?schema=public
+          JWT_SECRET: test-secret-key
+          PORT: 3001
+          FRONTEND_URL: http://localhost:3000
+          NODE_ENV: production
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Robot Framework E2E tests
+        run: robot tests/e2e
+
+  cd-staging:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    needs: e2e-robot
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build images
+        run: |
+          docker build -t ghcr.io/${{ github.repository }}/api:${{ env.IMAGE_TAG }} -f apps/api/Dockerfile .
+          docker build -t ghcr.io/${{ github.repository }}/web:${{ env.IMAGE_TAG }} -f apps/web/Dockerfile .
+
+      - name: Push images
+        run: |
+          docker push ghcr.io/${{ github.repository }}/api:${{ env.IMAGE_TAG }}
+          docker push ghcr.io/${{ github.repository }}/web:${{ env.IMAGE_TAG }}
+
+  cd-production:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    needs: e2e-robot
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build images
+        run: |
+          docker build -t ghcr.io/${{ github.repository }}/api:latest -f apps/api/Dockerfile .
+          docker build -t ghcr.io/${{ github.repository }}/api:${{ env.IMAGE_TAG }} -f apps/api/Dockerfile .
+
+          docker build -t ghcr.io/${{ github.repository }}/web:latest -f apps/web/Dockerfile .
+          docker build -t ghcr.io/${{ github.repository }}/web:${{ env.IMAGE_TAG }} -f apps/web/Dockerfile .
+
+      - name: Push images
+        run: |
+          docker push ghcr.io/${{ github.repository }}/api:latest
+          docker push ghcr.io/${{ github.repository }}/api:${{ env.IMAGE_TAG }}
+
+          docker push ghcr.io/${{ github.repository }}/web:latest
+          docker push ghcr.io/${{ github.repository }}/web:${{ env.IMAGE_TAG }}
