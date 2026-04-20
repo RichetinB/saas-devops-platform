@@ -2,7 +2,7 @@ name: E2E – Robot Framework Tests
 
 on:
   workflow_run:
-    workflows: ["CD Staging", "CD Production"]
+    workflows: ["CI"]
     types: [completed]
     branches: [main, develop]
   workflow_dispatch:
