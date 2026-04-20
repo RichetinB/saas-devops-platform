@@ -1,0 +1,82 @@
+name: E2E – Robot Framework Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: saas_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build all workspaces
+        run: npm run build
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_db?schema=public
+          NEXT_PUBLIC_API_URL: http://localhost:3001
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_db?schema=public
+
+      - name: Run Prisma migrations
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_db?schema=public
+        run: npx prisma migrate deploy
+
+      - name: Start API server
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_db?schema=public
+          JWT_SECRET: test-secret-key
+          PORT: 3001
+          FRONTEND_URL: http://localhost:3000
+          NODE_ENV: production
+        run: |
+          cd apps/api
+          node dist/main &
+          sleep 5
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Robot Framework E2E tests
+        run: robot tests/e2e
