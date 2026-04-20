@@ -7,10 +7,8 @@ on:
     branches: [main, develop]
 
 jobs:
-  lint-and-test:
+  lint-test-build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     services:
       postgres:
@@ -30,66 +28,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: 20
+          cache: npm
 
-      - name: Install dependencies
+      - name: Install deps
         run: npm ci
 
-      - name: Build shared package
+      - name: Build shared
         run: npm run build --workspace=packages/shared
 
       - name: Lint API
         run: npm run lint --workspace=apps/api
-        continue-on-error: true
 
-      - name: Generate Prisma client
+      - name: Generate Prisma
         run: npx prisma generate
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_test_db?schema=public
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_test_db
 
-      - name: Run API unit tests
+      - name: Run tests
         run: npm test --workspace=apps/api
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_test_db?schema=public
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_test_db
           JWT_SECRET: test-secret
 
-  build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    needs: lint-and-test
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build all packages
+      - name: Build all
         run: npm run build
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_db?schema=public
-          NEXT_PUBLIC_API_URL: http://localhost:3001
-
-  docker:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    needs: build
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Docker images
-        run: docker compose -f infra/docker-compose.yml build

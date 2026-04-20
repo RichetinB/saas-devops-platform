@@ -1,0 +1,39 @@
+name: CD Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build images
+        run: |
+          docker build -t ghcr.io/${{ github.repository }}/api:latest -f apps/api/Dockerfile .
+          docker build -t ghcr.io/${{ github.repository }}/api:${{ github.sha }} -f apps/api/Dockerfile .
+
+          docker build -t ghcr.io/${{ github.repository }}/web:latest -f apps/web/Dockerfile .
+          docker build -t ghcr.io/${{ github.repository }}/web:${{ github.sha }} -f apps/web/Dockerfile .
+
+      - name: Push images
+        run: |
+          docker push ghcr.io/${{ github.repository }}/api:latest
+          docker push ghcr.io/${{ github.repository }}/api:${{ github.sha }}
+
+          docker push ghcr.io/${{ github.repository }}/web:latest
+          docker push ghcr.io/${{ github.repository }}/web:${{ github.sha }}
+
+      # 👇 futur (quand tu auras ton VPS)
+      # - name: Deploy via SSH
+      #   run: ...
