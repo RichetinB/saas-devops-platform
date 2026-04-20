@@ -4,6 +4,7 @@ on:
   workflow_run:
     workflows: ["E2E – Robot Framework Tests"]
     types: [completed]
+    branches: [develop]
   workflow_dispatch:
 
 jobs:
