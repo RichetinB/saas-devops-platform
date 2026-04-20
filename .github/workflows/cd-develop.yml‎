@@ -1,0 +1,65 @@
+name: CD – Develop (Staging)
+
+on:
+  push:
+    branches: [develop]
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          NEXT_PUBLIC_API_URL: ${{ vars.STAGING_API_URL }}
+
+      - name: Build Docker images
+        run: docker compose -f infra/docker-compose.yml build
+
+      - name: Log in to container registry
+        if: ${{ vars.REGISTRY_URL != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.REGISTRY_URL }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Push Docker images to registry
+        if: ${{ vars.REGISTRY_URL != '' }}
+        run: |
+          docker tag saas-devops-platform-api ${{ vars.REGISTRY_URL }}/saas-api:develop
+          docker tag saas-devops-platform-web ${{ vars.REGISTRY_URL }}/saas-web:develop
+          docker push ${{ vars.REGISTRY_URL }}/saas-api:develop
+          docker push ${{ vars.REGISTRY_URL }}/saas-web:develop
+
+      - name: Deploy to staging server
+        if: ${{ secrets.STAGING_SSH_HOST != '' }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd /opt/saas-devops-platform
+            docker compose -f infra/docker-compose.yml pull
+            docker compose -f infra/docker-compose.yml up -d --remove-orphans
